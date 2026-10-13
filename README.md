@@ -11,6 +11,10 @@
 ساخت محیط مجازی و نصب وابستگی‌ها:
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/sina1991/unit2/feature/core-implementation/install.sh | sudo bash
+```
+
+```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
