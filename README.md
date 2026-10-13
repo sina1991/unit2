@@ -140,7 +140,7 @@ Example request:
   "symbol": "XAUUSD",
   "interval": "1m"
 }
-
+```
 indicator_id must match a discovered implementation. instance_id is optional; when omitted, the application generates it from the indicator identifier and resolved parameters. Successful creation returns HTTP 201.
 
 Run an instance
@@ -193,6 +193,8 @@ Run it in historical mode and query its calculated values.
 
 Verify the instance status and results before relying on live processing.
 
-Use the existing Moving Average implementation and indicator tests as references. Do not place implementation files inside app/indicators/active/; that directory stores instance configurations rather than discoverable indicator implementations. """
+Use the existing Moving Average implementation and indicator tests as references. Do not place implementation files inside app/indicators/active/; that directory stores instance configurations rather than discoverable indicator implementations.
+
+"""
 
 text = path.read_text(encoding="utf-8") if marker in text: print("این بخش از قبل در README.md وجود دارد؛ تغییری انجام نشد.") else: with path.open("a", encoding="utf-8") as f: f.write("\n" + content.lstrip()) print("بخش مستندات اندیکاتورها به README.md اضافه شد.") 
