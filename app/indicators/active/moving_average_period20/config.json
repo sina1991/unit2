@@ -1,0 +1,10 @@
+{
+  "instance_id": "moving_average_period20",
+  "indicator_id": "moving_average",
+  "parameter_set_id": "adb1b354-ff28-448e-a8a1-4ed9c44df767",
+  "parameters": {
+    "period": 20
+  },
+  "symbol": "XAUUSD",
+  "interval": "1m"
+}
