@@ -169,37 +169,59 @@ def main() -> int:
         return 0
 
     if args.command == "status":
-        from app.database.core import connect
-        database_path = get_database_path()
-        if not database_path.exists():
-            _print({
-                "database_exists": False,
-                "database_path": str(database_path),
-                "candle_count": 0,
-                "latest_candle_time": None,
-                "latest_sync": None,
-            })
-            return 0
+        import json
+        from urllib.request import urlopen
 
-        with connect(database_path) as connection:
-            candle_count = connection.execute(
-                "SELECT COUNT(*) FROM candles WHERE symbol='XAUUSD' AND interval='1m'"
-            ).fetchone()[0]
-            latest_candle = connection.execute(
-                "SELECT MAX(candle_time) FROM candles WHERE symbol='XAUUSD' AND interval='1m'"
-            ).fetchone()[0]
-            latest_sync = connection.execute("""
-                SELECT run_id, status, started_at, completed_at,
-                       fetched_count, inserted_or_updated_count, error_details
-                FROM sync_runs ORDER BY started_at DESC LIMIT 1
-            """).fetchone()
+        from app.database.core import connect
+        from app.indicators.lifecycle import discover_indicators, list_instances
+
+        database_path = get_database_path()
+        database_exists = database_path.exists()
+        candle_count = 0
+        latest_candle = None
+        latest_sync = None
+        instances = []
+
+        if database_exists:
+            with connect(database_path) as connection:
+                candle_count = connection.execute(
+                    "SELECT COUNT(*) FROM candles WHERE symbol='XAUUSD' AND interval='1m'"
+                ).fetchone()[0]
+                latest_candle = connection.execute(
+                    "SELECT MAX(candle_time) FROM candles WHERE symbol='XAUUSD' AND interval='1m'"
+                ).fetchone()[0]
+                latest_sync_row = connection.execute("""
+                    SELECT run_id, status, started_at, completed_at,
+                           fetched_count, inserted_or_updated_count, error_details
+                    FROM sync_runs ORDER BY started_at DESC LIMIT 1
+                """).fetchone()
+                latest_sync = dict(latest_sync_row) if latest_sync_row else None
+                instances = list_instances(connection=connection)
+
+        host = settings.analytics_host
+        if host in {"0.0.0.0", "::"}:
+            host = "127.0.0.1"
+        health_url = f"http://{host}:{settings.analytics_port}/health"
+
+        try:
+            with urlopen(health_url, timeout=2) as response:
+                health_data = json.load(response)
+            api_status = "reachable"
+            worker_state = health_data.get("worker_state", "unknown")
+        except Exception:
+            api_status = "unreachable"
+            worker_state = "unknown"
 
         _print({
-            "database_exists": True,
+            "database_exists": database_exists,
             "database_path": str(database_path),
             "candle_count": candle_count,
             "latest_candle_time": latest_candle,
-            "latest_sync": dict(latest_sync) if latest_sync else None,
+            "latest_sync": latest_sync,
+            "api_status": api_status,
+            "worker_state": worker_state,
+            "catalog": discover_indicators(),
+            "instances": instances,
         })
         return 0
 

@@ -11,8 +11,10 @@ from app.sync_service import sync_candles
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if getattr(app.state, "disable_worker", False):
+        app.state.worker_status = "disabled"
         yield
         return
+
     from app.worker import worker_loop
 
     stop_event = threading.Event()
@@ -22,12 +24,20 @@ async def lifespan(app: FastAPI):
         name="analytics-worker",
         daemon=True,
     )
+    app.state.worker_status = "starting"
+    app.state.worker_thread = worker_thread
     worker_thread.start()
+    app.state.worker_status = "running"
+
     try:
         yield
     finally:
+        app.state.worker_status = "stopping"
         stop_event.set()
         worker_thread.join(timeout=10)
+        app.state.worker_status = (
+            "stopped" if not worker_thread.is_alive() else "stopping"
+        )
 
 
 app = FastAPI(
@@ -40,7 +50,18 @@ app = FastAPI(
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": "db-analytics"}
+    worker_status = getattr(app.state, "worker_status", "not_started")
+    worker_thread = getattr(app.state, "worker_thread", None)
+
+    if worker_thread is not None and not worker_thread.is_alive():
+        if worker_status == "running":
+            worker_status = "stopped"
+
+    return {
+        "status": "ok",
+        "service": "db-analytics",
+        "worker_state": worker_status,
+    }
 
 
 @app.get("/api/v1/candles")

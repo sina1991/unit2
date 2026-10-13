@@ -1,0 +1,10 @@
+{
+  "instance_id": "relative_strength_index_period14",
+  "indicator_id": "relative_strength_index",
+  "parameter_set_id": "c6b55657-3c7f-46bf-9de8-65854c200b68",
+  "parameters": {
+    "period": 14
+  },
+  "symbol": "XAUUSD",
+  "interval": "1m"
+}

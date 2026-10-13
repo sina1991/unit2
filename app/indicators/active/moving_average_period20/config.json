@@ -1,7 +1,7 @@
 {
   "instance_id": "moving_average_period20",
   "indicator_id": "moving_average",
-  "parameter_set_id": "adb1b354-ff28-448e-a8a1-4ed9c44df767",
+  "parameter_set_id": "b985a480-cde6-438c-83ba-b9f19bdbb769",
   "parameters": {
     "period": 20
   },
