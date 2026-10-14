@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = Field(default=10.0, gt=0)
     sync_batch_size: int = Field(default=500, ge=1, le=1000)
     log_level: str = "INFO"
-    indicator_paths: str = "app/indicators"
+    indicator_paths: str = "app/indicators/plugins"
     script_paths: str = "scripts"
 
 

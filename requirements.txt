@@ -4,3 +4,4 @@ pydantic
 pydantic-settings
 httpx
 pytest
+rich==15.0.0

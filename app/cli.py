@@ -3,62 +3,60 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import time
 
-from app.config import get_database_path, get_settings
+from app.config import get_settings
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="db-analytics",
-        description="Manage the db-analytics service.",
+        description="Manage db analytics service",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("init", help="Initialize the analytics database")
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    sync_parser = subparsers.add_parser(
-        "sync", help="Synchronize XAUUSD 1m candles from db-gold"
-    )
-    sync_parser.add_argument("--start-time", type=int)
-    sync_parser.add_argument("--end-time", type=int)
-    sync_parser.add_argument("--batch-size", type=int)
+    sub.add_parser("init")
+    sub.add_parser("status")
+    sub.add_parser("catalog")
+    sub.add_parser("instances")
+    sub.add_parser("manage")
 
-    subparsers.add_parser("status", help="Show local database and sync status")
-    subparsers.add_parser("catalog", help="Discover available indicators")
-    subparsers.add_parser("instances", help="List indicator instances")
-    subparsers.add_parser("manage", help="Interactively manage indicator instances")
+    sync = sub.add_parser("sync")
+    sync.add_argument("--start-time", type=int)
+    sync.add_argument("--end-time", type=int)
+    sync.add_argument("--batch-size", type=int)
 
-    activate = subparsers.add_parser("activate", help="Activate an indicator")
+    activate = sub.add_parser("activate")
     activate.add_argument("--indicator-id", required=True)
-    activate.add_argument("--instance-id")
     activate.add_argument("--parameters", default="{}")
     activate.add_argument("--symbol", default="XAUUSD")
     activate.add_argument("--interval", default="1m")
 
-    for command in ("enable", "disable", "delete"):
-        item = subparsers.add_parser(command, help=f"{command.title()} an instance")
-        item.add_argument("instance_id")
+    for name in ("enable", "disable", "delete"):
+        cmd = sub.add_parser(name)
+        cmd.add_argument("instance_id")
 
-    run = subparsers.add_parser(
-        "run", help="Process all available data for an indicator instance"
-    )
+    run = sub.add_parser("run")
     run.add_argument("instance_id")
-    run.add_argument("--mode", choices=("historical", "online"), default="historical")
-    run.add_argument("--batch-size", type=int, default=500)
 
-    worker = subparsers.add_parser("worker", help="Run indicator calculations continuously")
+    worker = sub.add_parser("worker")
     worker.add_argument("--batch-size", type=int, default=500)
-    worker.add_argument("--interval-seconds", type=float, default=5.0)
 
     return parser
 
 
-def _print(data: object) -> None:
+def _print(data):
     print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
 
 
-def _manage_interactively() -> int:
+def _manage_interactively():
+
+    from app.cli_display import (
+        header,
+        indicators_table,
+        instances_table,
+    )
+
     from app.indicators.lifecycle import (
         activate_indicator,
         delete_instance,
@@ -68,106 +66,128 @@ def _manage_interactively() -> int:
     )
 
     while True:
+
         catalog = discover_indicators()
         instances = list_instances()
 
-        print("\n=== Indicator management ===")
-        print("Available algorithms:")
-        for index, item in enumerate(catalog, 1):
-            print(f"  A{index}. {item['identifier']} — {item['display_name']}")
+        header("Indicator Management")
 
-        print("\nInstances:")
-        for index, item in enumerate(instances, 1):
-            print(
-                f"  {index}. {item['instance_id']} | {item['status']} | "
-                f"{item['parameters']} | historical={item['historical_status']}"
+        indicators_table(catalog)
+
+        instances_table(instances)
+
+        print()
+        print("[1] Activate Indicator")
+        print("[2] Enable Instance")
+        print("[3] Disable Instance")
+        print("[4] Delete Instance")
+        print("[0] Exit")
+
+        choice = input("Choose: ").strip()
+
+        if choice == "0":
+            return 0
+
+        if choice == "1":
+
+            number = int(input("Indicator number: "))
+
+            indicator = catalog[number - 1]
+
+            params = {}
+
+            defaults = indicator.get(
+                "default_parameters",
+                {}
             )
 
-        print("\n[a] activate  [e] enable  [d] disable  [x] delete  [q] quit")
-        choice = input("Choose: ").strip().lower()
+            for key, value in defaults.items():
 
-        if choice == "q":
-            return 0
-        if choice == "a":
-            if not catalog:
-                print("No indicators discovered.")
-                continue
-            number = input("Algorithm number (A-number): ").strip().upper()
-            if not number.startswith("A") or not number[1:].isdigit():
-                print("Invalid algorithm selection.")
-                continue
-            index = int(number[1:]) - 1
-            if not 0 <= index < len(catalog):
-                print("Selection out of range.")
-                continue
+                raw = input(
+                    f"{key} [{value}]: "
+                ).strip()
 
-            item = catalog[index]
-            raw = input(
-                f"Parameters JSON {item['default_parameters']}: "
-            ).strip()
+                if raw:
+                    params[key] = int(raw)
+
             try:
-                parameters = json.loads(raw) if raw else item["default_parameters"]
-                _print(activate_indicator(
-                    item["identifier"], parameters=parameters
-                ))
-            except (ValueError, json.JSONDecodeError) as exc:
-                print(f"Error: {exc}")
-            continue
+                result = activate_indicator(
+                    indicator["identifier"],
+                    parameters=params,
+                )
 
-        if choice in {"e", "d", "x"}:
-            if not instances:
-                print("No instances.")
-                continue
-            raw_index = input("Instance number: ").strip()
-            if not raw_index.isdigit():
-                print("Invalid selection.")
-                continue
-            index = int(raw_index) - 1
-            if not 0 <= index < len(instances):
-                print("Selection out of range.")
-                continue
+                _print(result)
 
-            instance_id = instances[index]["instance_id"]
-            try:
-                if choice == "x":
-                    confirm = input(f"Delete {instance_id}? [y/N]: ").strip().lower()
-                    if confirm == "y":
-                        _print(delete_instance(instance_id))
-                else:
-                    _print(set_instance_status(
-                        instance_id, "active" if choice == "e" else "disabled"
-                    ))
             except ValueError as exc:
                 print(f"Error: {exc}")
-            continue
-
-        print("Unknown option.")
 
 
-def main() -> int:
+        elif choice in ("2", "3", "4"):
+
+            number = int(
+                input("Instance number: ")
+            )
+
+            instance = instances[number - 1]
+
+            instance_id = instance["instance_id"]
+
+
+            if choice == "2":
+                _print(
+                    set_instance_status(
+                        instance_id,
+                        "active"
+                    )
+                )
+
+            elif choice == "3":
+                _print(
+                    set_instance_status(
+                        instance_id,
+                        "disabled"
+                    )
+                )
+
+            else:
+                _print(
+                    delete_instance(
+                        instance_id
+                    )
+                )
+
+
+def main():
+
     args = build_parser().parse_args()
+
     settings = get_settings()
+
     logging.basicConfig(
-        level=settings.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        level=settings.log_level.upper()
     )
 
-    if args.command == "init":
+
+    if args.command == "manage":
         from app.database.core import initialize_configured
         initialize_configured()
-        _print({"status": "initialized"})
-        return 0
+        return _manage_interactively()
 
-    if args.command == "sync":
-        from app.sync_service import sync_candles
-        result = sync_candles(
-            start_time=args.start_time,
-            end_time=args.end_time,
-            batch_size=args.batch_size,
+
+    from app.database.core import initialize_configured
+    initialize_configured()
+
+
+    if args.command == "init":
+
+        _print(
+            {
+                "status": "initialized"
+            }
         )
-        _print(result)
         return 0
 
+<<<<<<< HEAD
     if args.command == "status":
         import json
         from urllib.request import urlopen
@@ -224,121 +244,77 @@ def main() -> int:
             "instances": instances,
         })
         return 0
+=======
 
-    if args.command in {"catalog", "instances", "manage", "activate",
-                        "enable", "disable", "delete", "run", "worker"}:
-        from app.database.core import initialize_configured
-        from app.indicators.lifecycle import (
-            activate_indicator,
-            delete_instance,
-            discover_indicators,
-            list_instances,
-            run_instance_batch,
-            set_instance_status,
+    if args.command == "catalog":
+
+        from app.indicators.lifecycle import discover_indicators
+>>>>>>> 655ddad (Implement plugin based indicator engine with MA EMA RSI ATR MACD)
+
+        _print(
+            discover_indicators()
         )
 
-        initialize_configured()
+        return 0
 
-        if args.command == "catalog":
-            _print(discover_indicators())
-            return 0
-        if args.command == "instances":
-            _print(list_instances())
-            return 0
-        if args.command == "manage":
-            return _manage_interactively()
-        if args.command == "activate":
-            try:
-                parameters = json.loads(args.parameters)
-                if not isinstance(parameters, dict):
-                    raise ValueError("--parameters must be a JSON object")
-                _print(activate_indicator(
-                    args.indicator_id,
-                    instance_id=args.instance_id,
-                    parameters=parameters,
-                    symbol=args.symbol,
-                    interval=args.interval,
-                ))
-                return 0
-            except (ValueError, json.JSONDecodeError) as exc:
-                logging.error("%s", exc)
-                return 2
-        if args.command == "enable":
-            _print(set_instance_status(args.instance_id, "active"))
-            return 0
-        if args.command == "disable":
-            _print(set_instance_status(args.instance_id, "disabled"))
-            return 0
-        if args.command == "delete":
-            _print(delete_instance(args.instance_id))
-            return 0
-        if args.command == "run":
-            if args.batch_size < 1:
-                logging.error("Batch size must be positive.")
-                return 2
 
-            total_processed = 0
-            total_saved = 0
-            batches = 0
-            last_checkpoint = None
+    if args.command == "instances":
 
-            while True:
-                result = run_instance_batch(
-                    args.instance_id,
-                    mode=args.mode,
-                    batch_size=args.batch_size,
-                )
-                batches += 1
-                total_processed += result.get("processed_count", 0)
-                total_saved += result.get("saved_value_count", 0)
-                last_checkpoint = result.get("checkpoint_time")
+        from app.indicators.lifecycle import list_instances
 
-                if result.get("processed_count", 0) == 0:
-                    break
+        _print(
+            list_instances()
+        )
 
-            _print({
-                "instance_id": args.instance_id,
-                "mode": args.mode,
-                "batches": batches,
-                "processed_count": total_processed,
-                "saved_value_count": total_saved,
-                "checkpoint_time": last_checkpoint,
-                "completed": True,
-            })
-            return 0
-        if args.command == "worker":
-            if args.batch_size < 1 or args.interval_seconds <= 0:
-                logging.error("Batch size and interval must be positive.")
-                return 2
-            logging.info("Indicator worker started. Press Ctrl+C to stop.")
-            try:
-                while True:
-                    for instance in list_instances():
-                        if instance["status"] != "active":
-                            continue
-                        mode = (
-                            "historical"
-                            if instance["historical_status"] != "completed"
-                            else "online"
-                        )
-                        try:
-                            result = run_instance_batch(
-                                instance["instance_id"],
-                                mode=mode,
-                                batch_size=args.batch_size,
-                            )
-                            logging.info("%s", json.dumps(result, ensure_ascii=False))
-                        except Exception:
-                            logging.exception(
-                                "Indicator batch failed: %s",
-                                instance["instance_id"],
-                            )
-                    time.sleep(args.interval_seconds)
-            except KeyboardInterrupt:
-                logging.info("Indicator worker stopped.")
-                return 0
+        return 0
 
-    return 2
+
+    if args.command == "activate":
+
+        from app.indicators.lifecycle import activate_indicator
+
+        params=json.loads(
+            args.parameters
+        )
+
+        _print(
+            activate_indicator(
+                args.indicator_id,
+                parameters=params,
+                symbol=args.symbol,
+                interval=args.interval,
+            )
+        )
+
+        return 0
+
+    if args.command == "run":
+
+        from app.indicators.lifecycle import run_instance_batch
+
+        _print(
+            run_instance_batch(
+                args.instance_id
+            )
+        )
+
+        return 0
+
+    if args.command == "worker":
+
+        import threading
+        from app.worker import worker_loop
+
+        stop_event = threading.Event()
+
+        try:
+            worker_loop(stop_event)
+        except KeyboardInterrupt:
+            stop_event.set()
+
+        return 0
+
+    return 0
 
 
 if __name__ == "__main__":

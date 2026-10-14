@@ -1,15 +1,20 @@
-"""Simple moving average indicator."""
+"""Moving Average indicator plugin."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from app.indicators.base import CandleInput, Indicator, IndicatorMetadata, IndicatorOutput
+from app.indicators.base import (
+    CandleInput,
+    Indicator,
+    IndicatorMetadata,
+    IndicatorOutput,
+)
 
 
 class MovingAverage(Indicator):
-    """Calculate a simple moving average from candle closing prices."""
+    """Calculate simple moving average."""
 
     @property
     def metadata(self) -> IndicatorMetadata:
@@ -27,28 +32,32 @@ class MovingAverage(Indicator):
         candles: Sequence[CandleInput],
         parameters: Mapping[str, Any],
     ) -> Sequence[IndicatorOutput]:
+
         resolved = self.validate_parameters(parameters)
         period = resolved["period"]
 
-        if isinstance(period, bool) or not isinstance(period, int) or period < 1:
-            raise ValueError("period must be a positive integer")
+        if isinstance(period, bool) or not isinstance(period, int):
+            raise ValueError("period must be integer")
 
-        closes: list[float] = []
-        outputs: list[IndicatorOutput] = []
+        if period < 1:
+            raise ValueError("period must be positive")
+
+        closes = []
+        outputs = []
 
         for candle in candles:
             closes.append(float(candle.close))
-            window = closes[-period:]
 
-            if len(window) < period:
-                value = None
-            else:
-                value = sum(window) / period
+            value = None
+            if len(closes) >= period:
+                value = sum(closes[-period:]) / period
 
             outputs.append(
                 IndicatorOutput(
                     time=candle.time,
-                    values={f"ma_{period}": value},
+                    values={
+                        f"ma_{period}": value
+                    },
                 )
             )
 
